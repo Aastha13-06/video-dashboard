@@ -1,0 +1,11 @@
+{
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "secondsPerWord": 0.38,
+  "minSecondsPerLine": 1.8,
+  "font": "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+  "fontSize": 78,
+  "palette": [["0a0d28", "1a1f5a"], ["101010", "2a2a2a"], ["1b1030", "3a1f66"]],
+  "voice": { "provider": "none", "openaiModel": "gpt-4o-mini-tts", "openaiVoice": "alloy" }
+}
