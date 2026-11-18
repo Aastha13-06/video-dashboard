@@ -120,6 +120,14 @@ input.t,select.t{width:100%;border:1px solid var(--app-line);border-radius:8px;p
 .log{font-family:var(--mono);font-size:11.5px;color:#55555c;line-height:1.55;height:96px;overflow:auto;white-space:pre-wrap}
 .pfoot{display:flex;justify-content:space-between;align-items:center;padding:0 18px 16px;font-size:12.5px;color:var(--app-mute)}
 
+/* runs */
+.runs{margin-top:4px}.runs .row{display:flex;align-items:center;gap:10px;border:1px solid var(--app-line);border-radius:10px;padding:8px 10px;font-size:13px;margin-top:6px;background:#fff}
+.runs .row a{color:var(--blue);text-decoration:none;margin-left:auto;white-space:nowrap}.runs .row a:hover{text-decoration:underline}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}.dot.ok{background:#1fa463}.dot.bad{background:#d33}.dot.run{background:#e0a100}
+.sample{font-size:11px;font-family:var(--mono);color:#8a6a00;background:#fff6d6;border-radius:5px;padding:2px 7px}
+.scenes{counter-reset:s;display:flex;flex-direction:column;gap:6px;max-height:150px;overflow:auto;font-size:12.5px}
+.scenes li{list-style:none;display:flex;gap:8px;color:#444}.scenes li::before{counter-increment:s;content:counter(s);color:var(--blue);font-weight:700;min-width:14px}
+.warnc{color:#c2410c}
 /* calendar */
 .cal{padding:18px;display:grid;grid-template-columns:repeat(4,1fr) 1.5fr;gap:12px;align-items:start}
 .day{border:1px solid var(--app-line);border-radius:12px;padding:10px;font-size:12.5px;background:#fff;cursor:pointer;text-align:left;width:100%}
@@ -258,9 +266,9 @@ const DEFAULT = {
     title:"Free trials are killing your SaaS", duration:"1:01", mode:"Motion",
     steps:[
       {k:"Script", d:"Locked, word for word", ico:"doc"},
-      {k:"Voice",  d:"Narration, 1 voice", ico:"mic"},
-      {k:"Visuals",d:"14 scenes, drawn to the words", ico:"puzzle"},
-      {k:"Edit",   d:"Captions · cuts · motion", ico:"film"}
+      {k:"Voice",  d:"Silent until a voice provider is set", ico:"mic"},
+      {k:"Visuals",d:"One scene per line of your script", ico:"puzzle"},
+      {k:"Edit",   d:"Scenes joined into one video", ico:"film"}
     ]
   },
   calendar: {
@@ -333,7 +341,30 @@ const DUR = 7000;
 let acctView = false;           // analytics: account vs video
 let selDay = 0;
 let feedOn = true;
+let draft = null, runsCache = null;
 const run = { running:false, pct:0, step:-1, done:[false,false,false,false], log:[] };
+
+/* ---------- script draft ---------- */
+function sceneList(text){
+  return String(text||"").replace(/\\n/g,"\n").split(/\r?\n|\s*\|\s*/)
+    .flatMap(l=>l.split(/(?<=[.!?])\s+(?=\S)|(?<=[a-z][.!?])(?=[A-Z])/)).map(l=>l.trim()).filter(Boolean);
+}
+function loadDraft(){
+  let d=null; try{ d=JSON.parse(store.get("draft")||"null"); }catch{}
+  draft = (d && d.text) ? d : { title:D.script.title, text:[D.script.hook,...D.script.body,D.script.comment].join("\n") };
+}
+function saveDraft(){ store.set("draft", JSON.stringify(draft)); }
+function checksFor(text){
+  const L = sceneList(text), w = t=>t.split(/\s+/).length;
+  return [
+    [L.length>=3, "At least 3 scenes"],
+    [L.length>0 && w(L[0])<=14, "Hook is 14 words or fewer"],
+    [L.every(l=>w(l)<=22), "Each scene is 22 words or fewer"],
+    [/comment|follow|link|dm/i.test(L[L.length-1]||""), "Ends on a call to action"]
+  ];
+}
+function checksHtml(text){ return checksFor(text).map(([ok,t])=>`<li class="${ok?'':'warnc'}"><span class="tick" style="${ok?'':'background:#e8a07e'}">${ok?ICON.check:'!'}</span>${esc(t)}</li>`).join(""); }
+function scenesHtml(text){ return sceneList(text).map(l=>`<li>${esc(l)}</li>`).join(""); }
 
 /* ---------- renderers ---------- */
 function renderRail(){
@@ -362,7 +393,7 @@ function chrome(){
 
 function vFeed(){
   const f = D.feed;
-  return `<div class="bar-top"><b>My Feed</b><span class="pill">${esc(D.niche)}</span><span class="pill warn">${ICON.flame} Winning in your niche</span><span class="sp mut">♡ Saved 4</span></div>
+  return `<div class="bar-top"><b>My Feed</b>${SAMPLE}<span class="pill">${esc(D.niche)}</span><span class="pill warn">${ICON.flame} Winning in your niche</span><span class="sp mut">♡ Saved 4</span></div>
   <div class="feed">
     <div class="stack">
       <div class="reel a"><span>The price mistake everyone makes</span><small><span>14×</span><span>1.1M</span></small></div>
@@ -379,18 +410,18 @@ function vFeed(){
   </div>`;
 }
 function vScript(){
-  const s = D.script;
-  return `<div class="bar-top"><b>${esc(s.title)}</b><span class="pill">${esc(s.duration)}</span><span class="pill info">${ICON.hook} ${esc(s.source)}</span><span class="sp mut" id="savedState">Saved</span></div>
+  const n = sceneList(draft.text).length;
+  return `<div class="bar-top"><b>Your script</b><span class="pill" id="scnt">${n} scenes</span><span class="sp mut" id="savedState">Saved on this device</span></div>
   <div class="script">
     <div>
-      <div class="sline hook"><span class="tag">Hook</span>${esc(s.hook)}</div>
-      ${s.body.map(b=>`<div class="sline" style="padding-left:17px">${esc(b)}</div>`).join("")}
-      <div class="sline cmt"><span class="tag g">Comment</span>${esc(s.comment)}</div>
-      <details><summary class="mut" style="font-size:13px;cursor:pointer">Edit script text</summary>
-        <textarea class="edit" id="scriptEdit" aria-label="Script text">${esc([s.hook,...s.body,s.comment].join("\n"))}</textarea></details>
+      <label class="f" for="dTitle">Video title</label>
+      <input class="t" id="dTitle" value="${esc(draft.title)}" maxlength="120">
+      <label class="f" for="dText" style="margin-top:12px">Script. One scene per line (or one sentence per scene)</label>
+      <textarea class="edit" id="dText" style="min-height:230px">${esc(draft.text)}</textarea>
     </div>
-    <ul class="checks"><li class="eyebrow" style="list-style:none">Checks</li>${s.checks.map(c=>`<li><span class="tick">${ICON.check}</span>${esc(c)}</li>`).join("")}
-      <button class="btn dark" id="toProduce" style="justify-content:center;margin-top:6px">Produce ${ICON.arrow}</button></ul>
+    <div class="checks"><div class="eyebrow">Checks</div><ul id="checkList" style="padding:0;display:flex;flex-direction:column;gap:9px">${checksHtml(draft.text)}</ul>
+      <div class="eyebrow" style="margin-top:6px">Scenes</div><ol class="scenes" id="sceneList" style="padding:0">${scenesHtml(draft.text)}</ol>
+      <button class="btn dark" id="toProduce" style="justify-content:center;margin-top:6px">Produce ${ICON.arrow}</button></div>
   </div>`;
 }
 function vProd(){
@@ -399,23 +430,49 @@ function vProd(){
     const st = run.done[i] ? `<span class="tick">${ICON.check}</span>` : (run.running && run.step===i ? `<span class="spin"></span>` : `<span class="circle"></span>`);
     return `<div class="step"><span class="ico">${ICON[s.ico]}</span><b>${esc(s.k)}</b><span class="mut">${esc(s.d)}</span><span class="st">${st}</span></div>`;
   }).join("");
-  return `<div class="bar-top"><b id="ptitle">${esc(p.title)}</b><span class="pill">${esc(p.duration)}</span><span class="pill">${esc(p.mode)}</span>
-      <span class="sp" style="display:flex;gap:8px"><button class="btn" id="webhook">${ICON.gear.replace('17','13').replace('17','13')} Webhook</button><button class="btn primary" id="rerun" ${run.running?'disabled':''}>${ICON.rerun} Re-run</button></span></div>
+  return `<div class="bar-top"><b id="ptitle">${esc(draft.title)}</b><span class="pill">${sceneList(draft.text).length} scenes</span>
+      <span class="sp" style="display:flex;gap:8px"><button class="btn" id="webhook">${ICON.gear.replace('17','13').replace('17','13')} Webhook</button><button class="btn primary" id="rerun" ${run.running?'disabled':''}>${ICON.rerun} ${run.running?'Running':'Generate'}</button></span></div>
   <div class="prod">
-    <div class="phone"><span style="opacity:.7">you</span><div class="cap">If <em>you're</em> giving</div>
+    <div class="phone"><span style="opacity:.7">you</span><div class="cap">${esc(sceneList(draft.text)[0]||"")}</div>
       <svg viewBox="0 0 100 60" style="position:absolute;left:0;right:0;bottom:8px;width:100%"><path d="M0 52 C25 52 40 50 55 35 S85 8 95 4" fill="none" stroke="#3b5bff" stroke-width="1.6"/></svg></div>
     <div class="steps">
       ${stepsHtml}
       <div class="render"><div class="row"><span>Render</span><span id="rpct">${Math.round(run.pct)}%</span></div>
         <div class="prog"><i id="rbar" style="width:${run.pct}%"></i></div>
-        <div class="log" id="log" role="log">${esc(run.log.length?run.log.join("\n"):"→ Ready to Rip")}</div></div>
+        <div class="log" id="log" role="log">${esc(run.log.length?run.log.join("\n"):"→ Ready. Edit your script on the Scripts tab, then click Generate.")}</div></div>
+      <div class="runs"><div class="eyebrow" style="display:flex;justify-content:space-between;align-items:center">Recent runs <button class="btn" id="refRuns" style="padding:3px 9px;font-size:12px">Refresh</button></div><div id="runsList">${runsHtml()}</div></div>
     </div>
   </div>
   <div class="pfoot"><span>Stage 3 of 6</span><button class="btn dark" id="toPost">Next: Post ${ICON.arrow}</button></div>`;
 }
+function runsHtml(){
+  const c = cfg();
+  if(!(c.owner&&c.repo&&c.token)) return '<div class="mut" style="font-size:13px;padding:8px 0">Connect GitHub with the gear icon to run your pipeline and see your runs here.</div>';
+  if(!runsCache) return '<div class="mut" style="font-size:13px;padding:8px 0">Loading runs…</div>';
+  if(runsCache.error) return `<div class="mut" style="font-size:13px;padding:8px 0">Could not load runs (${esc(runsCache.error)}). Check owner, repo and token.</div>`;
+  if(!runsCache.items.length) return '<div class="mut" style="font-size:13px;padding:8px 0">No runs yet. Click Generate.</div>';
+  return runsCache.items.map(r=>{
+    const cls = r.status!=="completed" ? "run" : r.conclusion==="success" ? "ok" : "bad";
+    const label = r.status!=="completed" ? "Running" : r.conclusion==="success" ? "Done" : "Failed";
+    const when = new Date(r.created_at).toLocaleString("en-US",{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+    const link = r.conclusion==="success" ? "Download video ↗" : "Open run ↗";
+    return `<div class="row"><span class="dot ${cls}"></span><b>#${r.run_number}</b><span class="mut">${label} · ${esc(when)}</span><a href="${esc(r.html_url)}${r.conclusion==='success'?'#artifacts':''}" target="_blank" rel="noopener">${link}</a></div>`;
+  }).join("");
+}
+async function loadRuns(){
+  const c = cfg(); if(!(c.owner&&c.repo&&c.token)){ runsCache=null; paintRuns(); return; }
+  try{
+    const r = await fetch(`https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}/actions/workflows/generate-video.yml/runs?per_page=8`,{headers:ghHeaders(c)});
+    if(!r.ok) throw new Error(r.status);
+    runsCache = { items:(await r.json()).workflow_runs||[] };
+  }catch(e){ runsCache = { error:e.message }; }
+  paintRuns();
+}
+function paintRuns(){ const el=$("#runsList"); if(el) el.innerHTML = runsHtml(); }
+const SAMPLE = '<span class="sample">Sample data</span>';
 function vCal(){
   const c = D.calendar, d = c.days[selDay];
-  return `<div class="bar-top"><b>${esc(c.week)}</b><span class="pill ok">${c.posted} posted</span><span class="pill">${c.scheduled} scheduled</span></div>
+  return `<div class="bar-top"><b>${esc(c.week)}</b>${SAMPLE}<span class="pill ok">${c.posted} posted</span><span class="pill">${c.scheduled} scheduled</span></div>
   <div class="cal">
     ${c.days.map((x,i)=>`<button class="day ${i===selDay?'sel':''}" data-d="${i}"><div class="h"><span>${esc(x.d)}</span><span class="mut">${x.n}</span></div>
       <div class="thumb" style="background:${x.g}"></div><div class="mut">${esc(x.time)}</div>
@@ -443,7 +500,7 @@ function vAnalytics(){
   const v = D.analytics.video, a = D.analytics.account;
   const toggle = `<span class="seg"><button class="${!acctView?'on':''}" data-av="0">This video</button><button class="${acctView?'on':''}" data-av="1">Account</button></span>`;
   if(!acctView){
-    return `<div class="bar-top"><b>${esc(v.title)}</b><span class="pill">${esc(v.age)}</span><span class="sp" style="display:flex;gap:12px;align-items:center"><span class="mut">Posted ${esc(v.posted)}</span>${toggle}</span></div>
+    return `<div class="bar-top"><b>${esc(v.title)}</b>${SAMPLE}<span class="pill">${esc(v.age)}</span><span class="sp" style="display:flex;gap:12px;align-items:center"><span class="mut">Posted ${esc(v.posted)}</span>${toggle}</span></div>
     <div class="kpis" style="grid-template-columns:repeat(5,1fr)">${v.metrics.map(([l,val],i)=>`<div class="kpi"><div class="l">${ICON[["eye","heart","chat","share","save"][i]]}${esc(l)}</div><div class="v">${esc(val)}</div></div>`).join("")}</div>
     <div style="padding:0 18px 16px"><div class="box"><div style="display:flex;justify-content:space-between;font-size:13px" class="mut"><span>Views since posting</span><span>Avg. watch ${esc(v.avgWatch)}</span></div>
       ${areaChart(v.curve,{w:720,h:200,ylab:false,dot:false})}
@@ -451,7 +508,7 @@ function vAnalytics(){
   }
   const heat = Array.from({length:35},(_,i)=>{ const on = i < a.posting.days+4 && ((i*7)%11)!==3; const op = on ? [1,.75,.55,.35][(i*5)%4] : 0; return `<i style="${on?`background:rgba(33,70,217,${op})`:''}"></i>`}).join("");
   const C = 2*Math.PI*44, off = C*(1-a.watching.pct/100);
-  return `<div class="bar-top"><span style="width:30px;height:30px;border-radius:50%;background:#111;color:#fff;display:grid;place-items:center;font-weight:700">R</span><b>${esc(D.handle)}</b><span class="sp">${toggle}</span></div>
+  return `<div class="bar-top"><span style="width:30px;height:30px;border-radius:50%;background:#111;color:#fff;display:grid;place-items:center;font-weight:700">R</span><b>${esc(D.handle)}</b>${SAMPLE}<span class="sp">${toggle}</span></div>
   <div class="kpis">${a.kpis.map(([l,val],i)=>`<div class="kpi"><div class="l">${ICON[["eye","users","plus","heart"][i]]}${esc(l)}</div><div class="v">${esc(val)}</div></div>`).join("")}</div>
   <div class="acct">
     <div class="box"><h4>Followers</h4><div style="margin:6px 0"><span class="big">${a.followers.toLocaleString("en-US")}</span><span class="delta">${esc(a.gained)}</span></div>${areaChart(a.series)}</div>
@@ -468,7 +525,7 @@ function vAnalytics(){
 }
 function vCar(){
   const r = D.repurpose;
-  return `<div class="winner"><span class="pill warn" style="font-size:13px">${ICON.flame} Winner</span><b style="font-size:15px">${esc(r.winner)}</b><span class="sp mut" style="margin-left:auto;display:flex;gap:6px;align-items:center">${ICON.eye} ${esc(r.views)}</span></div>
+  return `<div class="winner"><span class="pill warn" style="font-size:13px">${ICON.flame} Winner</span><b style="font-size:15px">${esc(r.winner)}</b>${SAMPLE}<span class="sp mut" style="margin-left:auto;display:flex;gap:6px;align-items:center">${ICON.eye} ${esc(r.views)}</span></div>
   <div class="car">
     <div><div class="mini"><div style="text-align:center;margin-top:6px">If you're giving out<br>a free trial in 2026</div>
       <svg viewBox="0 0 100 60" style="position:absolute;left:0;right:0;bottom:22px;width:100%"><path d="M0 50 C30 50 45 46 58 30 S85 8 96 4" fill="none" stroke="#3b5bff" stroke-width="1.5"/></svg></div>
@@ -491,12 +548,13 @@ function renderApp(){
 function render(){ renderRail(); renderCopy(); renderApp(); $("#play").innerHTML = playing
   ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></svg>'
   : '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></svg>'; }
-function go(i){ stage = (i + D.stages.length) % D.stages.length; if(playing) schedule(); render(); }
+function go(i){ stage = (i + D.stages.length) % D.stages.length; if(stage===2 && !runsCache) loadRuns(); if(playing) schedule(); render(); }
 function schedule(){ clearTimeout(timer); timer = setTimeout(()=>go(stage+1), DUR); }
 function togglePlay(){ playing = !playing; if(playing) schedule(); else clearTimeout(timer); render(); }
 
 /* ---------- Production pipeline (GitHub Actions or simulation) ---------- */
 const cfg = () => ({ owner:store.get("gh.owner")||"", repo:store.get("gh.repo")||"", branch:store.get("gh.branch")||"main", token:store.get("gh.token")||"" });
+const ghHeaders = c => ({ "Accept":"application/vnd.github+json","Authorization":`Bearer ${c.token}`,"X-GitHub-Api-Version":"2022-11-28" });
 const stamp = () => new Date().toLocaleTimeString("en-US");
 function logLine(t){ run.log.push(`${stamp()}  ${t}`); const el=$("#log"); if(el){ el.textContent = run.log.join("\n"); el.scrollTop = el.scrollHeight; } }
 function setProgress(p){ run.pct = p; const b=$("#rbar"), t=$("#rpct"); if(b) b.style.width = p+"%"; if(t) t.textContent = Math.round(p)+"%"; }
@@ -518,17 +576,17 @@ async function simulate(){
     await new Promise(r=>setTimeout(r,900));
     run.done[i]=true; setProgress((i+1)/secs.length*85); logLine(`${secs[i]}: done`);
   }
-  run.step=-1; refreshSteps(); logLine("Render: encoding"); await new Promise(r=>setTimeout(r,900)); setProgress(100); logLine("Ready to Rip (simulated)");
+  run.step=-1; refreshSteps(); logLine("Render: encoding"); await new Promise(r=>setTimeout(r,900)); setProgress(100); logLine("Done (simulated). Connect GitHub with the gear icon for a real render.");
   run.running=false; refreshSteps();
 }
 async function dispatch(c){
   const base = `https://api.github.com/repos/${encodeURIComponent(c.owner)}/${encodeURIComponent(c.repo)}`;
-  const H = { "Accept":"application/vnd.github+json","Authorization":`Bearer ${c.token}`,"X-GitHub-Api-Version":"2022-11-28" };
+  const H = ghHeaders(c);
   try{
     logLine(`Dispatching workflow generate-video.yml on ${c.owner}/${c.repo}@${c.branch}`);
     const since = Date.now();
     const res = await fetch(`${base}/actions/workflows/generate-video.yml/dispatches`,{method:"POST",headers:{...H,"Content-Type":"application/json"},
-      body: JSON.stringify({ ref:c.branch, inputs:{ topic:D.production.title, script:[D.script.hook,...D.script.body,D.script.comment].join("\n") } })});
+      body: JSON.stringify({ ref:c.branch, inputs:{ topic:draft.title, script:sceneList(draft.text).join("\n") } })});
     if(res.status!==204){ throw new Error(`GitHub answered ${res.status}: ${(await res.text()).slice(0,140)}`); }
     logLine("Workflow queued. Waiting for a run to appear");
     let runId=null;
@@ -554,12 +612,12 @@ async function dispatch(c){
       const rr = await fetch(`${base}/actions/runs/${runId}`,{headers:H}); const info = await rr.json();
       if(info.status==="completed"){
         logLine(`Run finished: ${info.conclusion}`); logLine(info.html_url);
-        if(info.conclusion==="success"){ run.done=[true,true,true,true]; setProgress(100); logLine("Ready to Rip. Download the video from the run's Artifacts."); }
+        if(info.conclusion==="success"){ run.done=[true,true,true,true]; setProgress(100); logLine("Done. Download the video and carousel from the run's Artifacts (see Recent runs)."); }
         break;
       }
     }
   }catch(e){ logLine("Error: "+e.message); }
-  run.running=false; refreshSteps();
+  run.running=false; refreshSteps(); loadRuns();
 }
 
 /* ---------- wiring ---------- */
@@ -573,14 +631,16 @@ function wireApp(){
   on("#webhook",openSettings); on("#gear",openSettings);
   on("#tgFeed",e=>{feedOn=!feedOn; renderApp();});
   on("#tgTrial",e=>{const t=e.currentTarget; const o=t.classList.toggle("on"); t.setAttribute("aria-checked",o);});
-  const ed=$("#scriptEdit");
-  if(ed) ed.oninput=()=>{ const L=ed.value.split("\n").map(x=>x.trim()).filter(Boolean);
-    if(L.length>=2){ D.script.hook=L[0]; D.script.comment=L[L.length-1]; D.script.body=L.slice(1,-1); const s=$("#savedState"); if(s) s.textContent="Edited"; } };
+  on("#refRuns",()=>{ runsCache=null; paintRuns(); loadRuns(); });
+  const dT=$("#dTitle"), dX=$("#dText");
+  const upd=()=>{ draft.title=dT.value; draft.text=dX.value; saveDraft();
+    $("#checkList").innerHTML=checksHtml(draft.text); $("#sceneList").innerHTML=scenesHtml(draft.text); $("#scnt").textContent=sceneList(draft.text).length+" scenes"; };
+  if(dT&&dX){ dT.oninput=upd; dX.oninput=upd; }
 }
 function openSettings(){ const c=cfg(); $("#sOwner").value=c.owner; $("#sRepo").value=c.repo; $("#sBranch").value=c.branch; $("#sToken").value=c.token; $("#settings").showModal(); }
 $("#settings").addEventListener("close",()=>{
   const v=$("#settings").returnValue;
-  if(v==="save"){ store.set("gh.owner",$("#sOwner").value.trim()); store.set("gh.repo",$("#sRepo").value.trim()); store.set("gh.branch",$("#sBranch").value.trim()||"main"); store.set("gh.token",$("#sToken").value.trim()); }
+  if(v==="save"){ store.set("gh.owner",$("#sOwner").value.trim()); store.set("gh.repo",$("#sRepo").value.trim()); store.set("gh.branch",$("#sBranch").value.trim()||"main"); store.set("gh.token",$("#sToken").value.trim()); runsCache=null; if(stage===2){ renderApp(); loadRuns(); } }
 });
 $("#sClear").onclick=()=>{ ["owner","repo","branch","token"].forEach(k=>store.del("gh."+k)); $("#settings").close("clear"); };
 $("#rail").addEventListener("click",e=>{ const b=e.target.closest("button[data-i]"); if(b) go(+b.dataset.i); });
@@ -591,7 +651,7 @@ document.addEventListener("keydown",e=>{ if(e.target.closest("input,textarea,sel
 /* ---------- boot: load data/state.json if present ---------- */
 (async()=>{
   try{ if(location.protocol==="file:") throw 0; const r = await fetch("data/state.json",{cache:"no-store"}); if(r.ok){ const j = await r.json(); D = Object.assign({}, DEFAULT, j); } }catch{}
-  render();
+  loadDraft(); render();
 })();
 })();
 </script>
