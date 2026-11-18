@@ -1,0 +1,49 @@
+name: generate-video
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "Video title"
+        required: true
+        default: "My first automated video"
+      script:
+        description: "Script, one line per scene"
+        required: true
+        default: "Stop giving out free trials.\nEvery free user costs you real money.\nStart a starter plan instead."
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TOPIC: ${{ inputs.topic }}
+      SCRIPT: ${{ inputs.script }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Script
+        run: node scripts/generate.mjs script
+      - name: Voice
+        run: node scripts/generate.mjs voice
+      - name: Visuals
+        run: node scripts/generate.mjs visuals
+      - name: Edit
+        run: node scripts/generate.mjs edit
+      - name: Render
+        run: node scripts/generate.mjs render
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video
+          path: |
+            output/video.mp4
+            output/run.json
+            output/script.json
