@@ -40,6 +40,8 @@ jobs:
         run: node scripts/generate.mjs edit
       - name: Render
         run: node scripts/generate.mjs render
+      - name: Carousel
+        run: node scripts/generate.mjs carousel
       - uses: actions/upload-artifact@v4
         with:
           name: video
@@ -47,3 +49,4 @@ jobs:
             output/video.mp4
             output/run.json
             output/script.json
+            output/carousel/*.png
